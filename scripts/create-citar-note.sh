@@ -31,9 +31,19 @@ if [[ $(ec --eval '(length (seq-filter (lambda (f) (display-graphic-p f)) (frame
 	ec --create-frame --no-wait &>/dev/null
 fi
 app_path=$(ps -o comm= -p "$pid" | sed -E 's|(\.app)/.*|\1|')
-if [[ "$app_path" == *.app ]]; then open "$app_path"; else open -a Emacs 2>/dev/null; fi
+activate_emacs() {
+	if [[ "$app_path" == *.app ]]; then open "$app_path"; else open -a Emacs 2>/dev/null; fi
+	# fallback: macOS sometimes ignores `open` for an already-running app
+	# launched from the background (needs one-time Automation permission)
+	osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" &>/dev/null
+}
+activate_emacs
 
 if ! output=$(ec --no-wait --eval "(progn (let ((f (car (seq-filter #'display-graphic-p (frame-list))))) (when f (select-frame-set-input-focus f))) (require 'citar) (citar-create-note \"$key_escaped\") t)"); then
 	echo "⚠️ Emacs: ${output:0:120}"
 	return 1
 fi
+
+# citar may switch buffers/frames; make sure Emacs is still in front
+sleep 0.2
+activate_emacs
