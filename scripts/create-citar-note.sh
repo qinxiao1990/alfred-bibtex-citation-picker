@@ -17,8 +17,23 @@ fi
 key_escaped=${citekey//\\/\\\\}
 key_escaped=${key_escaped//\"/\\\"}
 
-if ! output=$("$emacsclient" --no-wait --eval "(progn (require 'citar) (citar-create-note \"$key_escaped\") (select-frame-set-input-focus (selected-frame)) t)" 2>&1); then
+ec() { "$emacsclient" "$@" 2>&1; }
+
+# Bring Emacs to the front *before* creating the note, so citar's prompts
+# (template/note selection) are visible. Derive the .app bundle from the
+# server's PID, so this works for Emacs.app, Emacs Plus, emacs-mac, etc.
+if ! pid=$(ec --eval '(emacs-pid)'); then
+	echo "⚠️ Emacs server not reachable: ${pid:0:100}"
+	return 1
+fi
+# if Emacs runs as a daemon without a GUI frame, create one
+if [[ $(ec --eval '(length (seq-filter (lambda (f) (display-graphic-p f)) (frame-list)))') == 0 ]]; then
+	ec --create-frame --no-wait &>/dev/null
+fi
+app_path=$(ps -o comm= -p "$pid" | sed -E 's|(\.app)/.*|\1|')
+if [[ "$app_path" == *.app ]]; then open "$app_path"; else open -a Emacs 2>/dev/null; fi
+
+if ! output=$(ec --no-wait --eval "(progn (let ((f (car (seq-filter #'display-graphic-p (frame-list))))) (when f (select-frame-set-input-focus f))) (require 'citar) (citar-create-note \"$key_escaped\") t)"); then
 	echo "⚠️ Emacs: ${output:0:120}"
 	return 1
 fi
-open -a Emacs 2>/dev/null
